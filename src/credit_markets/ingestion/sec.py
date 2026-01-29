@@ -2,6 +2,7 @@
 
 import httpx
 from credit_markets.config.settings import get_settings
+from credit_markets.utils.retry import retry
 
 class SECClient:
     def __init__(self):
@@ -10,6 +11,7 @@ class SECClient:
         self.base_url = "https://data.sec.gov"
         self.headers = {"User-Agent": self.user_agent}
 
+    @retry(max_attempts=3, base_delay=1.0, exceptions=(httpx.HTTPError,))
     def get_company_filings(self, cik: str) -> dict:
         cik_padded = cik.zfill(10)
         url = f"{self.base_url}/submissions/CIK{cik_padded}.json"
