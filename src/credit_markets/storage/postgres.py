@@ -37,6 +37,12 @@ class PostgresClient:
                 conn.commit()
                 return cursor.rowcount
 
+    def fetch_all(self, query: str, params: tuple = None) -> list:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                return cursor.fetchall()
+
 if __name__ == "__main__":
     client = PostgresClient()
     result = client.execute("SELECT 1")

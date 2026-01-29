@@ -4,11 +4,13 @@ A data pipeline for monitoring credit market conditions. Ingests treasury yield 
 
 ## What It Does
 
-- Pulls treasury yields (2Y, 10Y, 30Y) from the Federal Reserve Economic Data API
-- Pulls SEC filings from EDGAR for specified companies
+- Pulls 18 FRED series: full treasury curve (1M to 30Y), credit spreads (IG/HY), VIX, Fed Funds, SOFR
+- Pulls SEC filings from EDGAR for 33 major companies (banks, tech, utilities)
 - Stores raw JSON in S3 (bronze layer)
 - Transforms and loads into PostgreSQL (silver layer)
 - Provides a yield curve view with 2s10s spread calculation (gold layer)
+
+Configuration is database-driven. Add or remove tracked series/companies via SQL, not code changes.
 
 The 2s10s spread (10-year yield minus 2-year yield) is a key recession indicator. When it goes negative, the yield curve is inverted.
 
@@ -34,8 +36,8 @@ credit-markets-pipeline/
 │   ├── config/
 │   │   └── settings.py          # Pydantic settings from .env
 │   ├── ingestion/
-│   │   ├── fred.py              # FRED API client
-│   │   └── sec.py               # SEC EDGAR client
+│   │   ├── fred.py              # FRED API client with retry
+│   │   └── sec.py               # SEC EDGAR client with retry
 │   ├── storage/
 │   │   ├── s3.py                # S3 client (LocalStack compatible)
 │   │   └── postgres.py          # PostgreSQL client with batch inserts
@@ -43,12 +45,22 @@ credit-markets-pipeline/
 │   │   ├── fred.py              # FRED data transformer
 │   │   └── sec.py               # SEC data transformer
 │   ├── pipeline/
-│   │   └── daily.py             # Pipeline orchestrator
-│   └── observability/
-│       └── logging.py           # Structured JSON logging
+│   │   └── daily.py             # Pipeline orchestrator (database-driven)
+│   ├── utils/
+│   │   └── retry.py             # Retry decorator with exponential backoff
+│   ├── observability/
+│   │   └── logging.py           # Structured JSON logging
+│   └── cli.py                   # Click CLI interface
+├── scripts/
+│   ├── fetch_companies.py       # Populate SEC companies from API
+│   └── seed_fred_series.py      # Seed FRED series reference data
 ├── infrastructure/
 │   └── sql/init/
+│       ├── 00_reference.sql     # Reference tables (fred_series, sec_companies)
 │       └── 01_schemas.sql       # Silver tables and gold views
+├── tests/
+│   └── unit/
+│       └── test_retry.py        # Unit tests for retry decorator
 ├── docker-compose.yml           # PostgreSQL, LocalStack, Redis
 ├── pyproject.toml
 └── .env.example
@@ -94,19 +106,41 @@ This starts:
 ### Initialize Database
 
 ```bash
+docker exec -i credit-markets-postgres psql -U postgres -d credit_markets < infrastructure/sql/init/00_reference.sql
 docker exec -i credit-markets-postgres psql -U postgres -d credit_markets < infrastructure/sql/init/01_schemas.sql
+```
+
+### Populate Reference Data
+
+```bash
+# Fetch SEC company CIKs from SEC API
+python scripts/fetch_companies.py
+
+# Seed FRED series configuration
+python scripts/seed_fred_series.py
+
+# Mark specific companies as active (example: major banks and tech)
+docker exec -it credit-markets-postgres psql -U postgres -d credit_markets -c "
+UPDATE reference.sec_companies SET is_active = FALSE;
+UPDATE reference.sec_companies SET is_active = TRUE 
+WHERE ticker IN ('JPM', 'BAC', 'GS', 'AAPL', 'MSFT', 'NVDA');
+"
 ```
 
 ### Run the Pipeline
 
 ```bash
-python src/credit_markets/pipeline/daily.py
+# Using CLI
+python -m credit_markets.cli run
+
+# With specific date
+python -m credit_markets.cli run --target-date 2026-01-15
 ```
 
 Output:
 ```json
-{"timestamp": "2026-01-27T20:32:42", "level": "INFO", "message": "Starting pipeline for 2026-01-27", "module": "daily"}
-{"timestamp": "2026-01-27T20:32:53", "level": "INFO", "message": "Pipeline complete: 3 FRED rows, 0 SEC rows", "module": "daily"}
+{"timestamp": "2026-01-29T02:17:41", "level": "INFO", "message": "Starting pipeline for 2026-01-28", "module": "daily"}
+{"timestamp": "2026-01-29T02:20:55", "level": "INFO", "message": "Pipeline complete: 138079 FRED rows, 32125 SEC rows", "module": "daily"}
 ```
 
 ### Query the Data
@@ -148,18 +182,52 @@ Environment variables (see `.env.example`):
 
 ## Data Sources
 
-**FRED (Federal Reserve Economic Data)**
-- DGS2: 2-Year Treasury Constant Maturity Rate
-- DGS10: 10-Year Treasury Constant Maturity Rate
-- DGS30: 30-Year Treasury Constant Maturity Rate
+**FRED (Federal Reserve Economic Data)** - 18 series configured in `reference.fred_series`:
 
-**SEC EDGAR**
-- Company filings (10-K, 10-Q, 8-K)
-- Currently configured for Apple (CIK 320193) as example
+| Category | Series |
+|----------|--------|
+| Treasury Curve | DGS1MO, DGS3MO, DGS6MO, DGS1, DGS2, DGS5, DGS7, DGS10, DGS20, DGS30 |
+| Credit Spreads | BAMLC0A0CM (IG), BAMLC0A4CBBB (BBB), BAMLH0A0HYM2 (HY) |
+| Policy Rates | FEDFUNDS, SOFR |
+| Risk Indicators | VIXCLS, TEDRATE |
+| Inflation | T10YIE |
+
+**SEC EDGAR** - 33 companies configured in `reference.sec_companies`:
+- Major banks: JPM, BAC, C, WFC, GS, MS
+- Big tech: AAPL, MSFT, AMZN, GOOG, META, NVDA
+- Utilities, industrials, healthcare
+
+Add or remove tracked entities via SQL:
+```sql
+-- Add a new FRED series
+INSERT INTO reference.fred_series (series_id, name, category) 
+VALUES ('DFF', 'Federal Funds Rate Daily', 'policy');
+
+-- Stop tracking a company
+UPDATE reference.sec_companies SET is_active = FALSE WHERE ticker = 'GE';
+```
 
 ## Database Schema
 
-### Silver Layer
+### Reference Layer (Configuration)
+
+```sql
+reference.fred_series
+  - series_id (VARCHAR, PK)
+  - name (VARCHAR)
+  - category (VARCHAR)
+  - is_active (BOOLEAN)
+  - created_at (TIMESTAMP)
+
+reference.sec_companies
+  - cik (VARCHAR, PK)
+  - ticker (VARCHAR)
+  - name (VARCHAR)
+  - is_active (BOOLEAN)
+  - created_at (TIMESTAMP)
+```
+
+### Silver Layer (Cleaned Data)
 
 ```sql
 silver.treasury_yields
@@ -177,7 +245,7 @@ silver.sec_filings
   - ingested_at (TIMESTAMP)
 ```
 
-### Gold Layer
+### Gold Layer (Analytics)
 
 ```sql
 gold.yield_curve (VIEW)
@@ -197,14 +265,15 @@ gold.yield_curve (VIEW)
 - Pydantic (settings)
 - httpx (HTTP client)
 - psycopg2 (PostgreSQL driver)
+- Click (CLI)
+- pytest (testing)
 
 ## Future Work
 
-- CLI interface
-- Error handling with retries
-- Unit and integration tests
+- Parallel processing with ThreadPoolExecutor and rate limiting
+- Backfill CLI command for historical date ranges
+- Enhanced gold layer views (credit stress indicators, yield curve analysis)
 - Airflow DAG for scheduling
-- Additional treasury series and credit spreads
 - Streamlit dashboard
 - CI/CD pipeline
 
