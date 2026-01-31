@@ -54,3 +54,26 @@ FROM silver.sec_filings f
 JOIN reference.sec_companies c ON LTRIM(f.cik, '0') = c.cik
 GROUP BY c.ticker, c.name, f.cik
 ORDER BY total_filings DESC;
+
+CREATE OR REPLACE VIEW gold.daily_snapshot AS
+SELECT
+    y.observation_date
+    ,y.yield_2y
+    ,y.yield_10y
+    ,y.spread_2s10s
+    ,s.hy_spread
+    ,s.vix
+    ,s.stress_score
+    ,CASE 
+        WHEN y.spread_2s10s < 0 THEN 'INVERTED'
+        WHEN y.spread_2s10s < 0.25 THEN 'FLAT'
+        ELSE 'NORMAL'
+    END AS curve_status
+    ,CASE
+        WHEN s.stress_score > 1.5 THEN 'HIGH'
+        WHEN s.stress_score > 0.8 THEN 'ELEVATED'
+        ELSE 'LOW'
+    END AS stress_level
+FROM gold.full_yield_curve y
+LEFT JOIN gold.credit_stress s ON y.observation_date = s.observation_date
+ORDER BY y.observation_date DESC;
