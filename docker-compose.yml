@@ -23,15 +23,17 @@ services:
     image: localstack/localstack:3.0
     container_name: credit-markets-localstack
     environment:
-      SERVICES: s3
+      SERVICES: s3, lambda
       DEBUG: 0
       DATA_DIR: /var/lib/localstack/data
       AWS_DEFAULT_REGION: us-east-1
+      DOCKER_HOST: unix:///var/run/docker.sock
     ports:
       - "4566:4566"
     volumes:
       - localstack_data:/var/lib/localstack
       - ./infrastructure/localstack:/etc/localstack/init/ready.d:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 10s

@@ -1,0 +1,5 @@
+httpx
+boto3
+psycopg2-binary
+pydantic
+pydantic-settings
