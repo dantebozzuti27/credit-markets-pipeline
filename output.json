@@ -1,0 +1,1 @@
+{"statusCode": 500, "body": "{\"error\": \"An error occurred (NoSuchBucket) when calling the PutObject operation: The specified bucket does not exist\"}"}
