@@ -54,6 +54,53 @@ services:
       retries: 5
     command: redis-server --appendonly yes
 
+  airflow:
+    image: apache/airflow:2.8.0-python3.11
+    container_name: credit-markets-airflow
+    environment:
+      # Airflow config
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/credit_markets
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__WEBSERVER__SECRET_KEY: 'your-secret-key-here'
+      # Pipeline config (uses Docker service names)
+      ENVIRONMENT: dev
+      FRED_API_KEY: ${FRED_API_KEY:-demo}
+      SEC_USER_AGENT: ${SEC_USER_AGENT:-credit-markets-pipeline}
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      S3_BUCKET: credit-markets-data
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: credit_markets
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: INFO
+      PYTHONPATH: /opt/airflow/src
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./src:/opt/airflow/src
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      bash -c "
+        pip install pydantic pydantic-settings httpx tenacity structlog --quiet &&
+        airflow standalone
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   # Optional: Grafana for metrics visualization
   grafana:
     image: grafana/grafana:10.2.0

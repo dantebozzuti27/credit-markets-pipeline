@@ -268,14 +268,38 @@ gold.yield_curve (VIEW)
 - Click (CLI)
 - pytest (testing)
 
+## Orchestration
+
+The pipeline is orchestrated with Apache Airflow, running locally via Docker Compose.
+
+```bash
+# Start the full stack (Postgres, LocalStack, Redis, Airflow)
+docker compose up -d
+
+# Access Airflow UI
+open http://localhost:8080
+# Login: admin / (check standalone_admin_password.txt in container)
+```
+
+The DAG `credit_markets_daily` runs at 6 AM UTC daily. Manual triggers available via the Airflow UI.
+
+**DAG location:** `airflow/dags/credit_markets_daily.py`
+
+## CI/CD
+
+GitHub Actions runs on every push:
+- Linting with ruff
+- Unit tests with pytest
+
+See `.github/workflows/ci.yml`.
+
 ## Future Work
 
-- Parallel processing with ThreadPoolExecutor and rate limiting
+- S3 sensors to trigger DAG on file arrival
 - Backfill CLI command for historical date ranges
 - Enhanced gold layer views (credit stress indicators, yield curve analysis)
-- Airflow DAG for scheduling
 - Streamlit dashboard
-- CI/CD pipeline
+- AWS Lambda integration with Airflow
 
 ## License
 
