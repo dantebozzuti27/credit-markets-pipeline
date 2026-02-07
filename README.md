@@ -17,16 +17,45 @@ The 2s10s spread (10-year yield minus 2-year yield) is a key recession indicator
 ## Architecture
 
 ```
-FRED API ──┐
-           ├──> S3 (bronze) ──> PostgreSQL (silver) ──> Views (gold)
-SEC API  ──┘
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  FRED API   │     │  SEC EDGAR  │     │  S3 Sensor  │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │
+       └─────────┬─────────┘                   │
+                 ▼                             │
+         ┌───────────────┐                     │
+         │ S3 (Bronze)   │◄────────────────────┘
+         │ Raw JSON      │
+         └───────┬───────┘
+                 ▼
+         ┌───────────────┐     ┌───────────────┐
+         │ PostgreSQL    │     │ Great         │
+         │ (Silver)      │────▶│ Expectations  │
+         │ Validated     │     │ Validation    │
+         └───────┬───────┘     └───────────────┘
+                 ▼
+         ┌───────────────┐
+         │ Views (Gold)  │
+         │ Analytics     │
+         └───────┬───────┘
+                 ▼
+         ┌───────────────┐     ┌───────────────┐
+         │ AWS Lambda    │     │ Slack Alerts  │
+         │ Post-Process  │     │ CloudWatch    │
+         └───────────────┘     └───────────────┘
 ```
 
-**Bronze layer:** Raw JSON files partitioned by date and source
+**Layers:**
+- **Bronze:** Raw JSON files in S3, partitioned by date and source
+- **Silver:** Validated, typed, deduplicated tables with indexes
+- **Gold:** Analytical views (yield curve with spread calculations)
 
-**Silver layer:** Validated, typed, deduplicated tables with proper indexes
-
-**Gold layer:** Analytical views (yield curve with spread calculations)
+**Orchestration:** Apache Airflow DAG with:
+- S3 sensor (data-driven trigger)
+- Pipeline execution
+- Data quality validation (Great Expectations)
+- Lambda post-processing trigger
+- Slack success/failure alerts
 
 ## Project Structure
 
@@ -46,22 +75,33 @@ credit-markets-pipeline/
 │   │   └── sec.py               # SEC data transformer
 │   ├── pipeline/
 │   │   └── daily.py             # Pipeline orchestrator (database-driven)
+│   ├── quality/
+│   │   └── expectations.py      # Great Expectations validation
 │   ├── utils/
 │   │   └── retry.py             # Retry decorator with exponential backoff
 │   ├── observability/
 │   │   └── logging.py           # Structured JSON logging
 │   └── cli.py                   # Click CLI interface
+├── airflow/
+│   └── dags/
+│       └── credit_markets_daily.py  # Airflow DAG with sensors + validation
+├── infrastructure/
+│   ├── sql/init/
+│   │   ├── 00_reference.sql     # Reference tables
+│   │   └── 01_schemas.sql       # Silver tables and gold views
+│   └── lambda/
+│       └── post_processor.py    # Lambda post-processing handler
+├── gx/                          # Great Expectations config
+│   ├── expectations/            # Expectation suites
+│   ├── checkpoints/             # Validation checkpoints
+│   └── great_expectations.yml   # GX configuration
 ├── scripts/
 │   ├── fetch_companies.py       # Populate SEC companies from API
 │   └── seed_fred_series.py      # Seed FRED series reference data
-├── infrastructure/
-│   └── sql/init/
-│       ├── 00_reference.sql     # Reference tables (fred_series, sec_companies)
-│       └── 01_schemas.sql       # Silver tables and gold views
 ├── tests/
 │   └── unit/
-│       └── test_retry.py        # Unit tests for retry decorator
-├── docker-compose.yml           # PostgreSQL, LocalStack, Redis
+│       └── test_retry.py        # Unit tests
+├── docker-compose.yml           # PostgreSQL, LocalStack, Redis, Airflow
 ├── pyproject.toml
 └── .env.example
 ```
@@ -258,15 +298,17 @@ gold.yield_curve (VIEW)
 
 ## Tech Stack
 
-- Python 3.11
-- PostgreSQL 15
-- LocalStack (S3)
-- Docker Compose
-- Pydantic (settings)
-- httpx (HTTP client)
-- psycopg2 (PostgreSQL driver)
-- Click (CLI)
-- pytest (testing)
+- **Runtime:** Python 3.11
+- **Database:** PostgreSQL 15
+- **Object Storage:** S3 (LocalStack for local dev)
+- **Orchestration:** Apache Airflow 2.8
+- **Data Quality:** Great Expectations
+- **Serverless:** AWS Lambda
+- **Alerting:** Slack webhooks, CloudWatch metrics
+- **Infrastructure:** Docker Compose
+- **Libraries:** Pydantic, httpx, psycopg2, boto3, Click
+- **Testing:** pytest
+- **CI/CD:** GitHub Actions
 
 ## Orchestration
 
@@ -281,7 +323,28 @@ open http://localhost:8080
 # Login: admin / (check standalone_admin_password.txt in container)
 ```
 
-The DAG `credit_markets_daily` runs at 6 AM UTC daily. Manual triggers available via the Airflow UI.
+**DAG:** `credit_markets_daily` — runs at 6 AM UTC daily
+
+**Task Flow:**
+```
+wait_for_fred_data (S3KeySensor)
+        │
+        ▼
+run_daily_pipeline (ingestion + transform)
+        │
+        ▼
+validate_data (Great Expectations)
+        │
+        ▼
+trigger_lambda (post-processing)
+```
+
+**Features:**
+- S3 sensor with wildcard matching and reschedule mode
+- Data quality gate (blocks downstream on validation failure)
+- XCom data passing between tasks
+- Slack alerts on success/failure
+- Soft fail for sensor timeout
 
 **DAG location:** `airflow/dags/credit_markets_daily.py`
 
@@ -293,13 +356,32 @@ GitHub Actions runs on every push:
 
 See `.github/workflows/ci.yml`.
 
+## Data Quality
+
+Data validation is handled by Great Expectations, integrated as an Airflow task.
+
+**Expectation Suite:** `fred_data_suite` validates:
+- Required columns exist (`series_id`, `observation_date`, `value`)
+- No nulls in key columns
+- Series ID format matches expected pattern
+
+If validation fails, the DAG stops and sends a Slack alert.
+
+**Location:** `src/credit_markets/quality/expectations.py`
+
+## Monitoring & Alerting
+
+- **Slack Alerts:** Success/failure notifications via webhook
+- **CloudWatch Metrics:** Pipeline duration and success count (graceful degradation if CloudWatch unavailable)
+
+Configure `SLACK_WEBHOOK_URL` in your `.env` file.
+
 ## Future Work
 
-- S3 sensors to trigger DAG on file arrival
-- Backfill CLI command for historical date ranges
 - Enhanced gold layer views (credit stress indicators, yield curve analysis)
 - Streamlit dashboard
-- AWS Lambda integration with Airflow
+- Data lineage tracking
+- Incremental backfills with date partitioning
 
 ## License
 
