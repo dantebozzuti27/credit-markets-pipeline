@@ -132,6 +132,19 @@ with DAG(
         return results
     
     @task
+    def validate_data(**context):
+        """Run Great Expectations validation on pipeline output."""
+        from credit_markets.quality.expectations import get_context, validate_fred_data
+
+        gx_context = get_context()
+        result = validate_fred_data(gx_context)
+
+        if not result.success:
+            raise ValueError(f"Data quality check failed: {result.statistics}")
+
+        return result.statistics
+
+    @task
     def trigger_lambda(pipeline_results, **context):
         import json
         import boto3
@@ -159,6 +172,7 @@ with DAG(
         return response['StatusCode']
 
     pipeline_result = run_daily_pipeline()
-    wait_for_fred_data >> pipeline_result >> trigger_lambda(pipeline_result)
+    validation_result = validate_data()
+    wait_for_fred_data >> pipeline_result >> validation_result >> trigger_lambda(pipeline_result)
 
    

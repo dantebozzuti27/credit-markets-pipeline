@@ -93,7 +93,7 @@ services:
         condition: service_healthy
     command: >
       bash -c "
-        pip install pydantic pydantic-settings httpx tenacity structlog requests --quiet &&
+                pip install pydantic pydantic-settings httpx tenacity structlog requests great-expectations --quiet &&
         airflow standalone
       "
     healthcheck:

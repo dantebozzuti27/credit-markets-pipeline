@@ -1,0 +1,22 @@
+{
+  "data": {
+    "asset": {
+      "id": "e6349ed1-eb11-4e58-867b-cc787e9cba2a",
+      "name": "treasury_yields"
+    },
+    "batch_definition": {
+      "id": "23f0b6be-25b2-44ab-a0d8-cfc7243d5e54",
+      "name": "full_table"
+    },
+    "datasource": {
+      "id": "b1f17a2d-7d7c-40c8-9122-30fbbaddde65",
+      "name": "postgres_silver"
+    }
+  },
+  "id": "d27c0e51-a9a1-4d38-b148-b1187294463c",
+  "name": "treasury_validation",
+  "suite": {
+    "id": "a602bc8d-122e-42bc-a48c-027f2eacfddd",
+    "name": "fred_data_suite"
+  }
+}

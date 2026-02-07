@@ -1,0 +1,12 @@
+{
+  "actions": [],
+  "id": "cd483753-e112-4282-905a-5c97c067f2bd",
+  "name": "treasury_checkpoint",
+  "result_format": "SUMMARY",
+  "validation_definitions": [
+    {
+      "id": "d27c0e51-a9a1-4d38-b148-b1187294463c",
+      "name": "treasury_validation"
+    }
+  ]
+}

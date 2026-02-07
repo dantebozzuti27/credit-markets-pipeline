@@ -1,0 +1,65 @@
+{
+  "expectations": [
+    {
+      "id": "9fa8409e-e0d7-4e5d-ad5d-0bdb12c554ad",
+      "kwargs": {
+        "column": "series_id"
+      },
+      "meta": {},
+      "severity": "critical",
+      "type": "expect_column_to_exist"
+    },
+    {
+      "id": "3b1ce12a-9758-4664-a966-92b096a190e7",
+      "kwargs": {
+        "column": "observation_date"
+      },
+      "meta": {},
+      "severity": "critical",
+      "type": "expect_column_to_exist"
+    },
+    {
+      "id": "3bd41204-51a2-4179-8457-b724fa6bacb3",
+      "kwargs": {
+        "column": "value"
+      },
+      "meta": {},
+      "severity": "critical",
+      "type": "expect_column_to_exist"
+    },
+    {
+      "id": "bbec4c62-b2eb-44c7-a948-b2dd5ebec91f",
+      "kwargs": {
+        "column": "series_id"
+      },
+      "meta": {},
+      "severity": "critical",
+      "type": "expect_column_values_to_not_be_null"
+    },
+    {
+      "id": "f19bc33d-7521-4f96-bed3-5a60e20f043b",
+      "kwargs": {
+        "column": "observation_date"
+      },
+      "meta": {},
+      "severity": "critical",
+      "type": "expect_column_values_to_not_be_null"
+    },
+    {
+      "id": "d4a63a66-422f-4c8a-a81c-5896d8b462e4",
+      "kwargs": {
+        "column": "series_id",
+        "regex": "^[A-Z0-9]+$"
+      },
+      "meta": {},
+      "severity": "critical",
+      "type": "expect_column_values_to_match_regex"
+    }
+  ],
+  "id": "a602bc8d-122e-42bc-a48c-027f2eacfddd",
+  "meta": {
+    "great_expectations_version": "1.11.2"
+  },
+  "name": "fred_data_suite",
+  "notes": null
+}
