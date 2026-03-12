@@ -1,0 +1,19 @@
+# Day 43: dbt project for Credit Markets Pipeline
+# Run from this directory: dbt run, dbt test, dbt docs generate
+name: 'credit_markets'
+version: '1.0.0'
+config-version: 2
+profile: 'credit_markets'
+
+model-paths: ["models"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  credit_markets:
+    staging:
+      +schema: staging
+    gold:
+      +schema: gold

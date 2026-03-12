@@ -1,0 +1,9 @@
+# Silver layer tables (existing in Postgres). Use source('silver', 'treasury_yields') in models.
+version: 2
+sources:
+  - name: silver
+    schema: silver
+    description: Silver layer tables from the pipeline
+    tables:
+      - name: treasury_yields
+        description: Daily treasury yield observations by series

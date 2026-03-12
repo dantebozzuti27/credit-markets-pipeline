@@ -1,0 +1,14 @@
+# Postgres connection. When Postgres runs in Docker, use host: localhost and port: 5432 from the host.
+# From inside a container use host: credit-markets-postgres (service name).
+credit_markets:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: localhost
+      port: 5432
+      user: postgres
+      password: postgres
+      dbname: credit_markets
+      schema: dbt
+      threads: 2
